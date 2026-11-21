@@ -1,0 +1,668 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "_generator": {
+      "name": "bicep",
+      "version": "0.38.33.27573",
+      "templateHash": "11098338334872892166"
+    }
+  },
+  "parameters": {
+    "location": {
+      "type": "string",
+      "defaultValue": "[resourceGroup().location]",
+      "metadata": {
+        "description": "Region for everything. Defaults to the resource group's."
+      }
+    },
+    "allowedAddresses": {
+      "type": "array",
+      "minLength": 1,
+      "maxLength": 100,
+      "metadata": {
+        "description": "The public addresses allowed to reach Argus, as IPv4 addresses or CIDR ranges (for example your office's). Nothing else reaches the site. A range that lets everyone in (/0 or /1) is refused."
+      }
+    },
+    "signInClientId": {
+      "type": "string",
+      "defaultValue": "",
+      "maxLength": 36,
+      "metadata": {
+        "description": "Leave empty: the Connect line this deployment ends with makes the Argus sign-in app, and deploying again keeps the one the running site uses. Give a client ID only to use a sign-in app you registered yourself."
+      }
+    },
+    "collectAtUtc": {
+      "type": "string",
+      "defaultValue": "07:00",
+      "minLength": 5,
+      "maxLength": 5,
+      "metadata": {
+        "description": "When the nightly collection runs, as HH:mm in UTC. 07:00 UTC is 2 AM US Eastern."
+      }
+    },
+    "keepLogs": {
+      "type": "bool",
+      "defaultValue": false,
+      "metadata": {
+        "description": "Keep the environment's console logs in a Log Analytics workspace (billed by the GB). Off: logs can still be streamed live."
+      }
+    },
+    "registryUsername": {
+      "type": "string",
+      "defaultValue": "",
+      "maxLength": 50,
+      "metadata": {
+        "description": "The pull credential Higate gave you for Argus's image: its user name. Leave empty only for an image that needs no sign-in."
+      }
+    },
+    "registryPassword": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "The pull credential's password. Give it on every deployment: Azure keeps it only in the container app's secrets, never in the deployment's history."
+      }
+    },
+    "image": {
+      "type": "string",
+      "defaultValue": "[variables('$fxv#1')]",
+      "metadata": {
+        "description": "The Argus image, pinned to a release. Leave it as it is: it's the release's own image, by digest."
+      }
+    }
+  },
+  "variables": {
+    "copy": [
+      {
+        "name": "addressText",
+        "count": "[length(parameters('allowedAddresses'))]",
+        "input": "[trim(string(parameters('allowedAddresses')[copyIndex('addressText')]))]"
+      },
+      {
+        "name": "prefixText",
+        "count": "[length(parameters('allowedAddresses'))]",
+        "input": "[if(contains(variables('addressText')[copyIndex('prefixText')], '/'), last(split(variables('addressText')[copyIndex('prefixText')], '/')), '32')]"
+      },
+      {
+        "name": "prefixIsNumber",
+        "count": "[length(parameters('allowedAddresses'))]",
+        "input": "[and(and(not(empty(variables('prefixText')[copyIndex('prefixIsNumber')])), lessOrEquals(length(variables('prefixText')[copyIndex('prefixIsNumber')]), 3)), empty(replace(replace(replace(replace(replace(replace(replace(replace(replace(replace(variables('prefixText')[copyIndex('prefixIsNumber')], '0', ''), '1', ''), '2', ''), '3', ''), '4', ''), '5', ''), '6', ''), '7', ''), '8', ''), '9', '')))]"
+      },
+      {
+        "name": "allowedRanges",
+        "count": "[length(parameters('allowedAddresses'))]",
+        "input": "[if(variables('prefixIsNumber')[copyIndex('allowedRanges')], if(less(int(variables('prefixText')[copyIndex('allowedRanges')]), 2), fail(format('allowedAddresses must not let everyone in: give your own addresses, not {0}', variables('addressText')[copyIndex('allowedRanges')])), variables('addressText')[copyIndex('allowedRanges')]), fail(format('allowedAddresses must hold IPv4 addresses or ranges like 203.0.113.0/24, not {0}', variables('addressText')[copyIndex('allowedRanges')])))]"
+      }
+    ],
+    "$fxv#0": "higateargus.azurecr.io",
+    "$fxv#1": "higateargus.azurecr.io/argus@sha256:49e4a5270a0a9a82a86f033876e63921a5bd744fe4b28044ba4b83adb110bc27",
+    "$fxv#2": "0.2.23",
+    "$fxv#3": "https://github.com/Higate-Security/argus-connect/releases/download/v0.2.23/argus-connect-0.2.23.zip",
+    "$fxv#4": "a65049082bdca7b12018155c9976bcde6c89e276c8c7b216576389efb58e9772",
+    "releaseRegistry": "[variables('$fxv#0')]",
+    "suffix": "[uniqueString(resourceGroup().id)]",
+    "tags": {
+      "product": "argus"
+    },
+    "vnetName": "vnet-argus",
+    "subnetName": "snet-argus",
+    "storageName": "[format('stargus{0}', variables('suffix'))]",
+    "shareName": "argus",
+    "vaultName": "[format('kv-argus-{0}', variables('suffix'))]",
+    "identityName": "id-argus",
+    "environmentName": "cae-argus",
+    "environmentStorageName": "argus-share",
+    "workspaceName": "log-argus",
+    "appName": "ca-argus",
+    "jobName": "job-argus-collect",
+    "shareMountPath": "/mnt/argus",
+    "keyVaultSecretsOfficer": "b86a8fe4-44ce-4948-aee5-eccb2c155cd7",
+    "digits": "0123456789",
+    "collectShapeOk": "[and(and(and(and(and(equals(length(parameters('collectAtUtc')), 5), equals(take(skip(parameters('collectAtUtc'), 2), 1), ':')), contains(variables('digits'), take(parameters('collectAtUtc'), 1))), contains(variables('digits'), take(skip(parameters('collectAtUtc'), 1), 1))), contains(variables('digits'), take(skip(parameters('collectAtUtc'), 3), 1))), contains(variables('digits'), take(skip(parameters('collectAtUtc'), 4), 1)))]",
+    "collectHour": "[if(variables('collectShapeOk'), int(substring(parameters('collectAtUtc'), 0, 2)), -1)]",
+    "collectMinute": "[if(variables('collectShapeOk'), int(substring(parameters('collectAtUtc'), 3, 2)), -1)]",
+    "collectTime": "[if(and(and(and(greaterOrEquals(variables('collectHour'), 0), lessOrEquals(variables('collectHour'), 23)), greaterOrEquals(variables('collectMinute'), 0)), lessOrEquals(variables('collectMinute'), 59)), parameters('collectAtUtc'), fail('collectAtUtc must be a time as HH:mm in UTC, from 00:00 to 23:59, like 07:00'))]",
+    "collectCron": "[format('{0} {1} * * *', int(take(skip(variables('collectTime'), 3), 2)), int(take(variables('collectTime'), 2)))]",
+    "signInTag": "[string(coalesce(tryGet(tryGet(resourceGroup(), 'tags'), 'argus-signin-client-id'), ''))]",
+    "connectHasRun": "[and(empty(parameters('signInClientId')), not(empty(variables('signInTag'))))]",
+    "signInGivenIsId": "[and(and(equals(length(parameters('signInClientId')), 36), equals(map(split(parameters('signInClientId'), '-'), lambda('p', length(lambdaVariables('p')))), createArray(8, 4, 4, 4, 12))), empty(reduce(createArray('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '-'), toLower(parameters('signInClientId')), lambda('left', 'c', replace(lambdaVariables('left'), lambdaVariables('c'), '')))))]",
+    "signInTagIsId": "[and(and(equals(length(variables('signInTag')), 36), equals(map(split(variables('signInTag'), '-'), lambda('p', length(lambdaVariables('p')))), createArray(8, 4, 4, 4, 12))), empty(reduce(createArray('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '-'), toLower(variables('signInTag')), lambda('left', 'c', replace(lambdaVariables('left'), lambdaVariables('c'), '')))))]",
+    "imageGiven": "[if(empty(trim(parameters('image'))), fail('image is empty: give the Argus image, pinned to a release'), parameters('image'))]",
+    "imageRegistryPart": "[if(contains(variables('imageGiven'), '/'), toLower(first(split(variables('imageGiven'), '/'))), '')]",
+    "imageHost": "[first(split(variables('imageRegistryPart'), ':'))]",
+    "registryNeeded": "[and(not(empty(variables('releaseRegistry'))), equals(variables('imageHost'), toLower(variables('releaseRegistry'))))]",
+    "useRegistry": "[if(variables('registryNeeded'), if(not(equals(variables('imageRegistryPart'), variables('imageHost'))), fail(format('image must name {0} without a port', variables('releaseRegistry'))), if(empty(parameters('registryUsername')), fail('registryUsername is empty: give the pull credential Higate sent you, its user name and its password'), if(empty(parameters('registryPassword')), fail('registryPassword is empty: give the pull credential''s password on every deployment, with registryUsername'), true()))), if(or(not(empty(parameters('registryUsername'))), not(empty(parameters('registryPassword')))), fail(format('a pull credential is given, but image isn''t on {0}: the pull credential is only for Argus''s own registry', variables('releaseRegistry'))), false()))]",
+    "registryPasswordSecret": "registry-password",
+    "connectVersion": "[variables('$fxv#2')]",
+    "connectUrl": "[variables('$fxv#3')]",
+    "connectSha256": "[variables('$fxv#4')]",
+    "subnetId": "[resourceId('Microsoft.Network/virtualNetworks/subnets', variables('vnetName'), variables('subnetName'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.Network/virtualNetworks",
+      "apiVersion": "2024-10-01",
+      "name": "[variables('vnetName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "addressSpace": {
+          "addressPrefixes": [
+            "10.40.0.0/16"
+          ]
+        },
+        "subnets": [
+          {
+            "name": "[variables('subnetName')]",
+            "properties": {
+              "addressPrefix": "10.40.0.0/23",
+              "delegations": [
+                {
+                  "name": "containerapps",
+                  "properties": {
+                    "serviceName": "Microsoft.App/environments"
+                  }
+                }
+              ],
+              "serviceEndpoints": [
+                {
+                  "service": "Microsoft.Storage"
+                },
+                {
+                  "service": "Microsoft.KeyVault"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts",
+      "apiVersion": "2025-01-01",
+      "name": "[variables('storageName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "sku": {
+        "name": "PremiumV2_LRS"
+      },
+      "kind": "FileStorage",
+      "properties": {
+        "minimumTlsVersion": "TLS1_2",
+        "allowBlobPublicAccess": false,
+        "allowSharedKeyAccess": false,
+        "supportsHttpsTrafficOnly": false,
+        "publicNetworkAccess": "Enabled",
+        "networkAcls": {
+          "defaultAction": "Deny",
+          "bypass": "None",
+          "virtualNetworkRules": [
+            {
+              "id": "[variables('subnetId')]",
+              "action": "Allow"
+            }
+          ],
+          "ipRules": []
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}/{1}', variables('storageName'), 'default')]",
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Storage/storageAccounts/fileServices/shares",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}/{1}/{2}', variables('storageName'), 'default', variables('shareName'))]",
+      "properties": {
+        "shareQuota": 32,
+        "enabledProtocols": "NFS",
+        "rootSquash": "RootSquash"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices', variables('storageName'), 'default')]"
+      ]
+    },
+    {
+      "type": "Microsoft.ManagedIdentity/userAssignedIdentities",
+      "apiVersion": "2024-11-30",
+      "name": "[variables('identityName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]"
+    },
+    {
+      "type": "Microsoft.KeyVault/vaults",
+      "apiVersion": "2025-05-01",
+      "name": "[variables('vaultName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "tenantId": "[tenant().tenantId]",
+        "sku": {
+          "family": "A",
+          "name": "standard"
+        },
+        "enableRbacAuthorization": true,
+        "enableSoftDelete": true,
+        "softDeleteRetentionInDays": 90,
+        "enablePurgeProtection": true,
+        "publicNetworkAccess": "Enabled",
+        "networkAcls": {
+          "defaultAction": "Deny",
+          "bypass": "None",
+          "virtualNetworkRules": [
+            {
+              "id": "[variables('subnetId')]",
+              "ignoreMissingVnetServiceEndpoint": false
+            }
+          ],
+          "ipRules": []
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.Authorization/roleAssignments",
+      "apiVersion": "2022-04-01",
+      "scope": "[format('Microsoft.KeyVault/vaults/{0}', variables('vaultName'))]",
+      "name": "[guid(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), variables('keyVaultSecretsOfficer'))]",
+      "properties": {
+        "roleDefinitionId": "[subscriptionResourceId('Microsoft.Authorization/roleDefinitions', variables('keyVaultSecretsOfficer'))]",
+        "principalId": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').principalId]",
+        "principalType": "ServicePrincipal"
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('keepLogs')]",
+      "type": "Microsoft.OperationalInsights/workspaces",
+      "apiVersion": "2025-02-01",
+      "name": "[variables('workspaceName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "sku": {
+          "name": "PerGB2018"
+        },
+        "retentionInDays": 30
+      }
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments",
+      "apiVersion": "2025-01-01",
+      "name": "[variables('environmentName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "properties": {
+        "vnetConfiguration": {
+          "infrastructureSubnetId": "[variables('subnetId')]",
+          "internal": false
+        },
+        "appLogsConfiguration": {
+          "destination": "[if(parameters('keepLogs'), 'azure-monitor', null())]"
+        },
+        "workloadProfiles": [
+          {
+            "name": "Consumption",
+            "workloadProfileType": "Consumption"
+          }
+        ],
+        "zoneRedundant": false
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.Network/virtualNetworks', variables('vnetName'))]"
+      ]
+    },
+    {
+      "condition": "[parameters('keepLogs')]",
+      "type": "Microsoft.Insights/diagnosticSettings",
+      "apiVersion": "2021-05-01-preview",
+      "scope": "[format('Microsoft.App/managedEnvironments/{0}', variables('environmentName'))]",
+      "name": "argus-logs",
+      "properties": {
+        "workspaceId": "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]",
+        "logs": [
+          {
+            "category": "ContainerAppConsoleLogs",
+            "enabled": true
+          },
+          {
+            "category": "ContainerAppSystemLogs",
+            "enabled": true
+          }
+        ]
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.OperationalInsights/workspaces', variables('workspaceName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/managedEnvironments/storages",
+      "apiVersion": "2025-01-01",
+      "name": "[format('{0}/{1}', variables('environmentName'), variables('environmentStorageName'))]",
+      "properties": {
+        "nfsAzureFile": {
+          "server": "[format('{0}.file.{1}', variables('storageName'), environment().suffixes.storage)]",
+          "shareName": "[format('/{0}/{1}', variables('storageName'), variables('shareName'))]",
+          "accessMode": "ReadWrite"
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts/fileServices/shares', variables('storageName'), 'default', variables('shareName'))]",
+        "[resourceId('Microsoft.Storage/storageAccounts', variables('storageName'))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/containerApps",
+      "apiVersion": "2025-01-01",
+      "name": "[variables('appName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')))]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "workloadProfileName": "Consumption",
+        "configuration": {
+          "activeRevisionsMode": "Single",
+          "secrets": "[if(variables('useRegistry'), createArray(createObject('name', variables('registryPasswordSecret'), 'value', parameters('registryPassword'))), createArray())]",
+          "registries": "[if(variables('useRegistry'), createArray(createObject('server', variables('imageHost'), 'username', parameters('registryUsername'), 'passwordSecretRef', variables('registryPasswordSecret'))), createArray())]",
+          "ingress": {
+            "copy": [
+              {
+                "name": "ipSecurityRestrictions",
+                "count": "[length(variables('allowedRanges'))]",
+                "input": {
+                  "name": "[format('allowed-{0}', add(copyIndex('ipSecurityRestrictions'), 1))]",
+                  "ipAddressRange": "[variables('allowedRanges')[copyIndex('ipSecurityRestrictions')]]",
+                  "action": "Allow"
+                }
+              }
+            ],
+            "external": true,
+            "targetPort": 8080,
+            "transport": "http",
+            "allowInsecure": false
+          }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "argus",
+              "image": "[variables('imageGiven')]",
+              "resources": {
+                "cpu": "[json('1.0')]",
+                "memory": "2Gi"
+              },
+              "env": "[concat(createArray(createObject('name', 'ARGUS_SERVER_CONFIG', 'value', string(createObject('tenantId', tenant().tenantId, 'clientId', if(not(empty(parameters('signInClientId'))), if(variables('signInGivenIsId'), parameters('signInClientId'), fail('signInClientId must be the sign-in app''s Application (client) ID, a GUID, or empty')), if(empty(variables('signInTag')), '', if(not(variables('signInTagIsId')), fail('The resource group''s argus-signin-client-id tag must be a sign-in app''s client ID (a GUID): run Connect again, or give signInClientId'), if(equals(toLower(if(variables('connectHasRun'), coalesce(tryGet(tryGet(tryGet(if(variables('connectHasRun'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'signInClient'), 'value'), ''), '')), toLower(variables('signInTag'))), if(variables('connectHasRun'), coalesce(tryGet(tryGet(tryGet(if(variables('connectHasRun'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'signInClient'), 'value'), ''), ''), fail('The resource group''s argus-signin-client-id tag doesn''t match the sign-in app the running site uses, so this deployment stopped before changing it: run Connect again, or give signInClientId'))))), 'publicOrigin', format('https://{0}.{1}', variables('appName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('environmentName')), '2025-01-01').defaultDomain))))), createArray(createObject('name', 'ARGUS_APP_IDENTITY', 'value', string(createObject('managedIdentity', true(), 'clientId', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId, 'tenantId', tenant().tenantId))), createObject('name', 'ARGUS_COLLECT_AT_UTC', 'value', variables('collectTime')), createObject('name', 'ARGUS_KEY_VAULT', 'value', variables('vaultName')), createObject('name', 'ARGUS_KEY_VAULT_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId)))]",
+              "volumeMounts": [
+                {
+                  "volumeName": "data",
+                  "mountPath": "[variables('shareMountPath')]"
+                }
+              ],
+              "probes": [
+                {
+                  "type": "Startup",
+                  "httpGet": {
+                    "path": "/assure/",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 30
+                },
+                {
+                  "type": "Liveness",
+                  "httpGet": {
+                    "path": "/assure/",
+                    "port": 8080
+                  },
+                  "periodSeconds": 10,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                },
+                {
+                  "type": "Readiness",
+                  "httpGet": {
+                    "path": "/assure/",
+                    "port": 8080
+                  },
+                  "periodSeconds": 5,
+                  "timeoutSeconds": 5,
+                  "failureThreshold": 3
+                }
+              ]
+            }
+          ],
+          "scale": {
+            "minReplicas": 0,
+            "maxReplicas": 1
+          },
+          "volumes": [
+            {
+              "name": "data",
+              "storageType": "NfsAzureFile",
+              "storageName": "[variables('environmentStorageName')]"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments/storages', variables('environmentName'), variables('environmentStorageName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]",
+        "[resourceId('Microsoft.Resources/deployments', 'argus-running-signin')]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]",
+        "[extensionResourceId(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), variables('keyVaultSecretsOfficer')))]"
+      ]
+    },
+    {
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2025-01-01",
+      "name": "[variables('jobName')]",
+      "location": "[parameters('location')]",
+      "tags": "[variables('tags')]",
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+          "[format('{0}', resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')))]": {}
+        }
+      },
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "workloadProfileName": "Consumption",
+        "configuration": {
+          "triggerType": "Schedule",
+          "replicaTimeout": 15300,
+          "replicaRetryLimit": 0,
+          "scheduleTriggerConfig": {
+            "cronExpression": "[variables('collectCron')]",
+            "parallelism": 1,
+            "replicaCompletionCount": 1
+          },
+          "secrets": "[if(variables('useRegistry'), createArray(createObject('name', variables('registryPasswordSecret'), 'value', parameters('registryPassword'))), createArray())]",
+          "registries": "[if(variables('useRegistry'), createArray(createObject('server', variables('imageHost'), 'username', parameters('registryUsername'), 'passwordSecretRef', variables('registryPasswordSecret'))), createArray())]"
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "collect",
+              "image": "[variables('imageGiven')]",
+              "command": [
+                "/usr/bin/tini",
+                "-g",
+                "--",
+                "pwsh",
+                "-NoProfile",
+                "-NonInteractive",
+                "-File",
+                "/opt/argus/container/Start-ArgusContainerJob.ps1"
+              ],
+              "resources": {
+                "cpu": "[json('1.0')]",
+                "memory": "2Gi"
+              },
+              "env": [
+                {
+                  "name": "ARGUS_APP_IDENTITY",
+                  "value": "[string(createObject('managedIdentity', true(), 'clientId', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId, 'tenantId', tenant().tenantId))]"
+                },
+                {
+                  "name": "ARGUS_COLLECT_AT_UTC",
+                  "value": "[variables('collectTime')]"
+                },
+                {
+                  "name": "ARGUS_KEY_VAULT",
+                  "value": "[variables('vaultName')]"
+                },
+                {
+                  "name": "ARGUS_KEY_VAULT_CLIENT_ID",
+                  "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId]"
+                }
+              ],
+              "volumeMounts": [
+                {
+                  "volumeName": "data",
+                  "mountPath": "[variables('shareMountPath')]"
+                }
+              ]
+            }
+          ],
+          "volumes": [
+            {
+              "name": "data",
+              "storageType": "NfsAzureFile",
+              "storageName": "[variables('environmentStorageName')]"
+            }
+          ]
+        }
+      },
+      "dependsOn": [
+        "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
+        "[resourceId('Microsoft.App/managedEnvironments/storages', variables('environmentName'), variables('environmentStorageName'))]",
+        "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]",
+        "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]",
+        "[extensionResourceId(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), variables('keyVaultSecretsOfficer')))]"
+      ]
+    },
+    {
+      "condition": "[variables('connectHasRun')]",
+      "type": "Microsoft.Resources/deployments",
+      "apiVersion": "2025-04-01",
+      "name": "argus-running-signin",
+      "properties": {
+        "expressionEvaluationOptions": {
+          "scope": "inner"
+        },
+        "mode": "Incremental",
+        "parameters": {
+          "appName": {
+            "value": "[variables('appName')]"
+          }
+        },
+        "template": {
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+          "contentVersion": "1.0.0.0",
+          "metadata": {
+            "_generator": {
+              "name": "bicep",
+              "version": "0.38.33.27573",
+              "templateHash": "17724268764440032267"
+            }
+          },
+          "parameters": {
+            "appName": {
+              "type": "string",
+              "metadata": {
+                "description": "The container app argus.bicep deploys."
+              }
+            }
+          },
+          "resources": [],
+          "outputs": {
+            "signInClient": {
+              "type": "string",
+              "metadata": {
+                "description": "The client ID the running site signs people in with, or empty when it has none."
+              },
+              "value": "[if(equals(length(filter(flatten(map(reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2025-01-01').template.containers, lambda('c', coalesce(tryGet(lambdaVariables('c'), 'env'), createArray())))), lambda('e', equals(lambdaVariables('e').name, 'ARGUS_SERVER_CONFIG')))), 1), string(coalesce(tryGet(json(coalesce(tryGet(filter(flatten(map(reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2025-01-01').template.containers, lambda('c', coalesce(tryGet(lambdaVariables('c'), 'env'), createArray())))), lambda('e', equals(lambdaVariables('e').name, 'ARGUS_SERVER_CONFIG')))[0], 'value'), '{}')), 'clientId'), '')), '')]"
+            }
+          }
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "nextStep": {
+      "type": "string",
+      "metadata": {
+        "description": "The next step: paste this one line into Azure Cloud Shell (PowerShell), signed in as an Entra admin of this tenant. It downloads Argus Connect for this release, stops unless its SHA-256 matches, then connects Argus to Microsoft 365."
+      },
+      "value": "[format('& {{ $ErrorActionPreference = ''Stop''; $d = [IO.Directory]::CreateTempSubdirectory(''argus-connect-'').FullName; try {{ $z = Join-Path $d ''argus-connect.zip''; try {{ Invoke-WebRequest -Uri ''{0}'' -OutFile $z }} catch {{ Write-Host \"Stopped: Argus Connect {1} couldn''t be downloaded ($($_.Exception.Message)). Nothing was run.\" -ForegroundColor Red; return }}; if ((Get-FileHash -LiteralPath $z -Algorithm SHA256).Hash -ne ''{2}'') {{ Write-Host \"Stopped: the download isn''t Argus Connect {3} (its SHA-256 doesn''t match). Nothing was run.\" -ForegroundColor Red; return }}; Expand-Archive -LiteralPath $z -DestinationPath (Join-Path $d ''connect''); & (Join-Path $d ''connect'' ''Connect-ArgusMicrosoft365.ps1'') -SubscriptionId ''{4}'' -ResourceGroupName ''{5}'' -AppName ''{6}'' }} finally {{ if ((Split-Path -Leaf $d) -like ''argus-connect-*'') {{ Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }} }} }}', variables('connectUrl'), variables('connectVersion'), variables('connectSha256'), variables('connectVersion'), subscription().subscriptionId, resourceGroup().name, variables('appName'))]"
+    },
+    "siteUrl": {
+      "type": "string",
+      "metadata": {
+        "description": "Where Argus answers."
+      },
+      "value": "[format('{0}/assure/', format('https://{0}.{1}', variables('appName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('environmentName')), '2025-01-01').defaultDomain))]"
+    },
+    "signInRedirectUris": {
+      "type": "array",
+      "metadata": {
+        "description": "The sign-in app's two Web redirect URIs, one for each part of Argus, on the same address. Connect adds them; they're here for a sign-in app you registered yourself."
+      },
+      "value": [
+        "[format('{0}/assure/signin', format('https://{0}.{1}', variables('appName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('environmentName')), '2025-01-01').defaultDomain))]",
+        "[format('{0}/assess/signin', format('https://{0}.{1}', variables('appName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('environmentName')), '2025-01-01').defaultDomain))]"
+      ]
+    },
+    "managedIdentityObjectId": {
+      "type": "string",
+      "metadata": {
+        "description": "The managed identity's object ID. Connect gives it its read-only access; it's here for support."
+      },
+      "value": "[reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').principalId]"
+    },
+    "managedIdentityName": {
+      "type": "string",
+      "metadata": {
+        "description": "The managed identity's name, as the portal shows it."
+      },
+      "value": "[variables('identityName')]"
+    },
+    "keyVaultName": {
+      "type": "string",
+      "metadata": {
+        "description": "The Key Vault that holds the keys saved in Settings > Integrations."
+      },
+      "value": "[variables('vaultName')]"
+    },
+    "collectJobName": {
+      "type": "string",
+      "metadata": {
+        "description": "The nightly collection job, to start a run by hand from the portal."
+      },
+      "value": "[variables('jobName')]"
+    }
+  }
+}
