@@ -1,6 +1,6 @@
 # Install Argus in your own Azure
 
-Argus 0.2.23. This guide takes you from an empty Azure subscription to Argus's sign-in page.
+Argus 0.2.24. This guide takes you from an empty Azure subscription to Argus's sign-in page.
 
 ## 1. What it builds, and what it costs
 
@@ -34,35 +34,40 @@ network cost little or nothing. Prices depend on your region and agreement, so c
 ## 3. Check it first (what-if)
 
 What-if shows what the deployment would build, and builds nothing. Open [Azure Cloud Shell](https://shell.azure.com) in
-**PowerShell**, in the subscription Argus goes in. Change the first four lines to your own values (leave `$template` as it is), then paste it all:
+**PowerShell**. Change the first five lines to your own values (leave `$template` as it is), then paste it all:
 
 ```powershell
+$subscription = 'THE_SUBSCRIPTION_ARGUS_GOES_IN'
 $rg = 'argus'
 $region = 'eastus'
 $addresses = @('203.0.113.10')
 $user = 'THE_USER_NAME_HIGATE_SENT'
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.23/azuredeploy.json'
-if (-not (Get-AzResourceGroup -Name $rg -ErrorAction SilentlyContinue)) { New-AzResourceGroup -Name $rg -Location $region }
-$params = @{ allowedAddresses = $addresses; registryUsername = $user; registryPassword = (Read-Host 'Pull credential password' -AsSecureString) }
-New-AzResourceGroupDeployment -WhatIf -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.24/azuredeploy.json'
+if (Set-AzContext -Subscription $subscription -ErrorAction SilentlyContinue) {
+  if (-not (Get-AzResourceGroup -Name $rg -ErrorAction SilentlyContinue)) { New-AzResourceGroup -Name $rg -Location $region }
+  $params = @{ allowedAddresses = $addresses; registryUsername = $user; registryPassword = (Read-Host 'Pull credential password' -MaskInput) }
+  New-AzResourceGroupDeployment -WhatIf -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
+} else { Write-Host "Stopped: your account can't use the subscription '$subscription' (step 2). Nothing was made." -ForegroundColor Red }
 ```
 
-If your resource group already exists, the block uses it as it is, and `$region` isn't used. It asks for the password;
-paste it. On an empty group it lists 11 resources to create. An empty resource group costs
+If it stops because it can't use the subscription, your account has no role on it (step 2). If your resource group
+already exists, the block uses it as it is, and `$region` isn't used. It asks for the password;
+paste it (it shows as stars). On an empty group it lists 11 resources to create. An empty resource group costs
 nothing.
 
 ## 4. Deploy
 
-In the same Cloud Shell, the same command with a name in place of `-WhatIf` (in a new Cloud Shell, paste step 3's
-block first):
+In the same Cloud Shell, the same command with a name in place of `-WhatIf`. It then clears the password from the
+shell, so to deploy again, or in a new Cloud Shell, paste step 3's block first:
 
 ```powershell
 New-AzResourceGroupDeployment -Name argus -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
+$params.Remove('registryPassword')
 ```
 
 Or use the portal:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.23%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.24%2Fazuredeploy.json)
 
 Choose the resource group, then fill in **Allowed Addresses** as a list, like `["203.0.113.10"]`, **Registry Username**
 and **Registry Password**. Leave the rest as it is.
@@ -73,10 +78,12 @@ deploy.
 ## 5. Connect Argus to Microsoft 365
 
 The deployment ends with one line to run. In Cloud Shell (PowerShell), signed in as the Entra admin from step 2, show it.
-If this is a new Cloud Shell, or you deployed from the portal, set `$rg` to your resource group's name first:
+If this is a new Cloud Shell, or you deployed from the portal, set `$subscription` and `$rg` to yours first:
 
 ```powershell
+$subscription = 'THE_SUBSCRIPTION_ARGUS_GOES_IN'
 $rg = 'argus'
+Set-AzContext -Subscription $subscription | Out-Null
 (Get-AzResourceGroupDeployment -ResourceGroupName $rg | Where-Object { $_.Outputs -and $_.Outputs.ContainsKey('nextStep') } | Sort-Object Timestamp -Descending | Select-Object -First 1).Outputs['nextStep'].Value
 ```
 
@@ -91,7 +98,7 @@ You're already in Argus Admins. To give others access, open the Entra admin cent
 
 ## 6. Open Argus
 
-In the same Cloud Shell (with `$rg` set as in step 5):
+In the same Cloud Shell (with `$subscription` and `$rg` set as in step 5):
 
 ```powershell
 (Get-AzResourceGroupDeployment -ResourceGroupName $rg | Where-Object { $_.Outputs -and $_.Outputs.ContainsKey('siteUrl') } | Sort-Object Timestamp -Descending | Select-Object -First 1).Outputs['siteUrl'].Value
@@ -104,8 +111,9 @@ you.
 
 If this organisation already runs Argus on a Windows server, Connect leaves the server's sign-in app as it is and makes
 this Argus its own, named with its address (Argus sign-in (your address)). The server keeps working while you move, and
-Connect's plan names both apps before it changes anything. People who use the server aren't in this Argus's groups yet:
-add them as in step 5.
+Connect's plan names both apps before it changes anything. The server's **Argus Admins** and **Argus Viewers** groups are
+already there, so Connect stops at them and shows their object IDs. To give this Argus the same people, paste Connect's
+line again with ` -AdminsGroupId` and ` -ViewersGroupId` and those two IDs added at the end.
 
 Once nobody uses the server, remove it as its own guide says. In Entra, the server's apps are **Argus sign-in** and
 **Argus Collector**. This Argus's sign-in app is the one named with its own address: don't delete that one.
@@ -126,10 +134,10 @@ Undo-AzKeyVaultRemoval -VaultName $vault.VaultName -ResourceGroupName $rg -Locat
 
 ## Checking the template
 
-The template for this release is `azuredeploy.json`, SHA-256 `7efcb6624265fe950c7c547eac981ee3890ddb5f371e798ac815cfd9b45fb47b`. In Cloud Shell:
+The template for this release is `azuredeploy.json`, SHA-256 `7530e42ae1bef75ab3aa69bb1c3f83ca74f8d8f25ad51b44884c8a585aeffaf4`. In Cloud Shell:
 
 ```powershell
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.23/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.24/azuredeploy.json'
 Invoke-WebRequest -Uri $template -OutFile ./azuredeploy.json
 (Get-FileHash ./azuredeploy.json -Algorithm SHA256).Hash
 ```

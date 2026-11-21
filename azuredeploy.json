@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "11098338334872892166"
+      "templateHash": "18228257624986048371"
     }
   },
   "parameters": {
@@ -96,9 +96,9 @@
     ],
     "$fxv#0": "higateargus.azurecr.io",
     "$fxv#1": "higateargus.azurecr.io/argus@sha256:49e4a5270a0a9a82a86f033876e63921a5bd744fe4b28044ba4b83adb110bc27",
-    "$fxv#2": "0.2.23",
-    "$fxv#3": "https://github.com/Higate-Security/argus-connect/releases/download/v0.2.23/argus-connect-0.2.23.zip",
-    "$fxv#4": "a65049082bdca7b12018155c9976bcde6c89e276c8c7b216576389efb58e9772",
+    "$fxv#2": "0.2.24",
+    "$fxv#3": "https://github.com/Higate-Security/argus-connect/releases/download/v0.2.24/argus-connect-0.2.24.zip",
+    "$fxv#4": "d4e42809552f9363dcd03e0691a27c6d0bf4f67bb9aa6623d35a68c9785dba3d",
     "releaseRegistry": "[variables('$fxv#0')]",
     "suffix": "[uniqueString(resourceGroup().id)]",
     "tags": {
@@ -127,6 +127,10 @@
     "connectHasRun": "[and(empty(parameters('signInClientId')), not(empty(variables('signInTag'))))]",
     "signInGivenIsId": "[and(and(equals(length(parameters('signInClientId')), 36), equals(map(split(parameters('signInClientId'), '-'), lambda('p', length(lambdaVariables('p')))), createArray(8, 4, 4, 4, 12))), empty(reduce(createArray('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '-'), toLower(parameters('signInClientId')), lambda('left', 'c', replace(lambdaVariables('left'), lambdaVariables('c'), '')))))]",
     "signInTagIsId": "[and(and(equals(length(variables('signInTag')), 36), equals(map(split(variables('signInTag'), '-'), lambda('p', length(lambdaVariables('p')))), createArray(8, 4, 4, 4, 12))), empty(reduce(createArray('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', '-'), toLower(variables('signInTag')), lambda('left', 'c', replace(lambdaVariables('left'), lambdaVariables('c'), '')))))]",
+    "orgTag": "[string(coalesce(tryGet(tryGet(resourceGroup(), 'tags'), 'argus-organization'), ''))]",
+    "orgLabel": "[take(variables('orgTag'), sub(length(variables('orgTag')), length('.onmicrosoft.com')))]",
+    "orgTagIsDomain": "[and(and(and(and(and(equals(variables('orgTag'), toLower(variables('orgTag'))), equals(variables('orgTag'), format('{0}.onmicrosoft.com', variables('orgLabel')))), greaterOrEquals(length(variables('orgLabel')), 1)), lessOrEquals(length(variables('orgLabel')), 63)), not(startsWith(variables('orgLabel'), '-'))), empty(reduce(createArray('0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', '-'), variables('orgLabel'), lambda('left', 'c', replace(lambdaVariables('left'), lambdaVariables('c'), '')))))]",
+    "readRunning": "[or(variables('connectHasRun'), not(empty(variables('orgTag'))))]",
     "imageGiven": "[if(empty(trim(parameters('image'))), fail('image is empty: give the Argus image, pinned to a release'), parameters('image'))]",
     "imageRegistryPart": "[if(contains(variables('imageGiven'), '/'), toLower(first(split(variables('imageGiven'), '/'))), '')]",
     "imageHost": "[first(split(variables('imageRegistryPart'), ':'))]",
@@ -412,7 +416,7 @@
                 "cpu": "[json('1.0')]",
                 "memory": "2Gi"
               },
-              "env": "[concat(createArray(createObject('name', 'ARGUS_SERVER_CONFIG', 'value', string(createObject('tenantId', tenant().tenantId, 'clientId', if(not(empty(parameters('signInClientId'))), if(variables('signInGivenIsId'), parameters('signInClientId'), fail('signInClientId must be the sign-in app''s Application (client) ID, a GUID, or empty')), if(empty(variables('signInTag')), '', if(not(variables('signInTagIsId')), fail('The resource group''s argus-signin-client-id tag must be a sign-in app''s client ID (a GUID): run Connect again, or give signInClientId'), if(equals(toLower(if(variables('connectHasRun'), coalesce(tryGet(tryGet(tryGet(if(variables('connectHasRun'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'signInClient'), 'value'), ''), '')), toLower(variables('signInTag'))), if(variables('connectHasRun'), coalesce(tryGet(tryGet(tryGet(if(variables('connectHasRun'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'signInClient'), 'value'), ''), ''), fail('The resource group''s argus-signin-client-id tag doesn''t match the sign-in app the running site uses, so this deployment stopped before changing it: run Connect again, or give signInClientId'))))), 'publicOrigin', format('https://{0}.{1}', variables('appName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('environmentName')), '2025-01-01').defaultDomain))))), createArray(createObject('name', 'ARGUS_APP_IDENTITY', 'value', string(createObject('managedIdentity', true(), 'clientId', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId, 'tenantId', tenant().tenantId))), createObject('name', 'ARGUS_COLLECT_AT_UTC', 'value', variables('collectTime')), createObject('name', 'ARGUS_KEY_VAULT', 'value', variables('vaultName')), createObject('name', 'ARGUS_KEY_VAULT_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId)))]",
+              "env": "[concat(createArray(createObject('name', 'ARGUS_SERVER_CONFIG', 'value', string(createObject('tenantId', tenant().tenantId, 'clientId', if(not(empty(parameters('signInClientId'))), if(variables('signInGivenIsId'), parameters('signInClientId'), fail('signInClientId must be the sign-in app''s Application (client) ID, a GUID, or empty')), if(empty(variables('signInTag')), '', if(not(variables('signInTagIsId')), fail('The resource group''s argus-signin-client-id tag must be a sign-in app''s client ID (a GUID): run Connect again, or give signInClientId'), if(equals(toLower(if(variables('connectHasRun'), coalesce(tryGet(tryGet(tryGet(if(variables('readRunning'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'signInClient'), 'value'), ''), '')), toLower(variables('signInTag'))), if(variables('connectHasRun'), coalesce(tryGet(tryGet(tryGet(if(variables('readRunning'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'signInClient'), 'value'), ''), ''), fail('The resource group''s argus-signin-client-id tag doesn''t match the sign-in app the running site uses, so this deployment stopped before changing it: run Connect again, or give signInClientId'))))), 'publicOrigin', format('https://{0}.{1}', variables('appName'), reference(resourceId('Microsoft.App/managedEnvironments', variables('environmentName')), '2025-01-01').defaultDomain))))), createArray(createObject('name', 'ARGUS_APP_IDENTITY', 'value', string(union(createObject('managedIdentity', true(), 'clientId', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId, 'tenantId', tenant().tenantId), if(empty(if(empty(variables('orgTag')), '', if(not(variables('orgTagIsDomain')), fail('The resource group''s argus-organization tag must be the tenant''s initial domain in lower case, like contoso.onmicrosoft.com: run Connect again'), if(equals(toLower(if(variables('readRunning'), coalesce(tryGet(tryGet(tryGet(if(variables('readRunning'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'organization'), 'value'), ''), '')), variables('orgTag')), variables('orgTag'), fail('The resource group''s argus-organization tag doesn''t match the organisation the running site names, so this deployment stopped before changing it: run Connect again'))))), createObject(), createObject('organization', if(empty(variables('orgTag')), '', if(not(variables('orgTagIsDomain')), fail('The resource group''s argus-organization tag must be the tenant''s initial domain in lower case, like contoso.onmicrosoft.com: run Connect again'), if(equals(toLower(if(variables('readRunning'), coalesce(tryGet(tryGet(tryGet(if(variables('readRunning'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'organization'), 'value'), ''), '')), variables('orgTag')), variables('orgTag'), fail('The resource group''s argus-organization tag doesn''t match the organisation the running site names, so this deployment stopped before changing it: run Connect again'))))))))), createObject('name', 'ARGUS_COLLECT_AT_UTC', 'value', variables('collectTime')), createObject('name', 'ARGUS_KEY_VAULT', 'value', variables('vaultName')), createObject('name', 'ARGUS_KEY_VAULT_CLIENT_ID', 'value', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId)))]",
               "volumeMounts": [
                 {
                   "volumeName": "data",
@@ -524,7 +528,7 @@
               "env": [
                 {
                   "name": "ARGUS_APP_IDENTITY",
-                  "value": "[string(createObject('managedIdentity', true(), 'clientId', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId, 'tenantId', tenant().tenantId))]"
+                  "value": "[string(union(createObject('managedIdentity', true(), 'clientId', reference(resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), '2024-11-30').clientId, 'tenantId', tenant().tenantId), if(empty(if(empty(variables('orgTag')), '', if(not(variables('orgTagIsDomain')), fail('The resource group''s argus-organization tag must be the tenant''s initial domain in lower case, like contoso.onmicrosoft.com: run Connect again'), if(equals(toLower(if(variables('readRunning'), coalesce(tryGet(tryGet(tryGet(if(variables('readRunning'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'organization'), 'value'), ''), '')), variables('orgTag')), variables('orgTag'), fail('The resource group''s argus-organization tag doesn''t match the organisation the running site names, so this deployment stopped before changing it: run Connect again'))))), createObject(), createObject('organization', if(empty(variables('orgTag')), '', if(not(variables('orgTagIsDomain')), fail('The resource group''s argus-organization tag must be the tenant''s initial domain in lower case, like contoso.onmicrosoft.com: run Connect again'), if(equals(toLower(if(variables('readRunning'), coalesce(tryGet(tryGet(tryGet(if(variables('readRunning'), reference(resourceId('Microsoft.Resources/deployments', 'argus-running-signin'), '2025-04-01'), null()), 'outputs'), 'organization'), 'value'), ''), '')), variables('orgTag')), variables('orgTag'), fail('The resource group''s argus-organization tag doesn''t match the organisation the running site names, so this deployment stopped before changing it: run Connect again'))))))))]"
                 },
                 {
                   "name": "ARGUS_COLLECT_AT_UTC",
@@ -560,12 +564,13 @@
         "[resourceId('Microsoft.App/managedEnvironments', variables('environmentName'))]",
         "[resourceId('Microsoft.App/managedEnvironments/storages', variables('environmentName'), variables('environmentStorageName'))]",
         "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName'))]",
+        "[resourceId('Microsoft.Resources/deployments', 'argus-running-signin')]",
         "[resourceId('Microsoft.KeyVault/vaults', variables('vaultName'))]",
         "[extensionResourceId(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), 'Microsoft.Authorization/roleAssignments', guid(resourceId('Microsoft.KeyVault/vaults', variables('vaultName')), resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', variables('identityName')), variables('keyVaultSecretsOfficer')))]"
       ]
     },
     {
-      "condition": "[variables('connectHasRun')]",
+      "condition": "[variables('readRunning')]",
       "type": "Microsoft.Resources/deployments",
       "apiVersion": "2025-04-01",
       "name": "argus-running-signin",
@@ -586,7 +591,7 @@
             "_generator": {
               "name": "bicep",
               "version": "0.38.33.27573",
-              "templateHash": "17724268764440032267"
+              "templateHash": "5727241899155957349"
             }
           },
           "parameters": {
@@ -605,6 +610,13 @@
                 "description": "The client ID the running site signs people in with, or empty when it has none."
               },
               "value": "[if(equals(length(filter(flatten(map(reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2025-01-01').template.containers, lambda('c', coalesce(tryGet(lambdaVariables('c'), 'env'), createArray())))), lambda('e', equals(lambdaVariables('e').name, 'ARGUS_SERVER_CONFIG')))), 1), string(coalesce(tryGet(json(coalesce(tryGet(filter(flatten(map(reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2025-01-01').template.containers, lambda('c', coalesce(tryGet(lambdaVariables('c'), 'env'), createArray())))), lambda('e', equals(lambdaVariables('e').name, 'ARGUS_SERVER_CONFIG')))[0], 'value'), '{}')), 'clientId'), '')), '')]"
+            },
+            "organization": {
+              "type": "string",
+              "metadata": {
+                "description": "The organization (the tenant's initial domain) the running site's ARGUS_APP_IDENTITY names, or empty when it has none."
+              },
+              "value": "[if(equals(length(filter(flatten(map(reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2025-01-01').template.containers, lambda('c', coalesce(tryGet(lambdaVariables('c'), 'env'), createArray())))), lambda('e', equals(lambdaVariables('e').name, 'ARGUS_APP_IDENTITY')))), 1), string(coalesce(tryGet(json(coalesce(tryGet(filter(flatten(map(reference(resourceId('Microsoft.App/containerApps', parameters('appName')), '2025-01-01').template.containers, lambda('c', coalesce(tryGet(lambdaVariables('c'), 'env'), createArray())))), lambda('e', equals(lambdaVariables('e').name, 'ARGUS_APP_IDENTITY')))[0], 'value'), '{}')), 'organization'), '')), '')]"
             }
           }
         }
@@ -617,7 +629,7 @@
       "metadata": {
         "description": "The next step: paste this one line into Azure Cloud Shell (PowerShell), signed in as an Entra admin of this tenant. It downloads Argus Connect for this release, stops unless its SHA-256 matches, then connects Argus to Microsoft 365."
       },
-      "value": "[format('& {{ $ErrorActionPreference = ''Stop''; $d = [IO.Directory]::CreateTempSubdirectory(''argus-connect-'').FullName; try {{ $z = Join-Path $d ''argus-connect.zip''; try {{ Invoke-WebRequest -Uri ''{0}'' -OutFile $z }} catch {{ Write-Host \"Stopped: Argus Connect {1} couldn''t be downloaded ($($_.Exception.Message)). Nothing was run.\" -ForegroundColor Red; return }}; if ((Get-FileHash -LiteralPath $z -Algorithm SHA256).Hash -ne ''{2}'') {{ Write-Host \"Stopped: the download isn''t Argus Connect {3} (its SHA-256 doesn''t match). Nothing was run.\" -ForegroundColor Red; return }}; Expand-Archive -LiteralPath $z -DestinationPath (Join-Path $d ''connect''); & (Join-Path $d ''connect'' ''Connect-ArgusMicrosoft365.ps1'') -SubscriptionId ''{4}'' -ResourceGroupName ''{5}'' -AppName ''{6}'' }} finally {{ if ((Split-Path -Leaf $d) -like ''argus-connect-*'') {{ Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }} }} }}', variables('connectUrl'), variables('connectVersion'), variables('connectSha256'), variables('connectVersion'), subscription().subscriptionId, resourceGroup().name, variables('appName'))]"
+      "value": "[format('& {{ $ErrorActionPreference = ''Stop''; $d = [IO.Directory]::CreateTempSubdirectory(''argus-connect-'').FullName; try {{ $z = Join-Path $d ''argus-connect.zip''; try {{ Invoke-WebRequest -Uri ''{0}'' -OutFile $z }} catch {{ Write-Host \"Stopped: Argus Connect {1} couldn''t be downloaded ($($_.Exception.Message)). Nothing was run.\" -ForegroundColor Red; return }}; if ((Get-FileHash -LiteralPath $z -Algorithm SHA256).Hash -ne ''{2}'') {{ Write-Host \"Stopped: the download isn''t Argus Connect {3} (its SHA-256 doesn''t match). Nothing was run.\" -ForegroundColor Red; return }}; Expand-Archive -LiteralPath $z -DestinationPath (Join-Path $d ''connect''); & (Join-Path $d ''connect'' ''Connect-ArgusMicrosoft365.ps1'') -SubscriptionId ''{4}'' -ResourceGroupName ''{5}'' -AppName ''{6}'' @args }} finally {{ if ((Split-Path -Leaf $d) -like ''argus-connect-*'') {{ Remove-Item -LiteralPath $d -Recurse -Force -ErrorAction SilentlyContinue }} }} }}', variables('connectUrl'), variables('connectVersion'), variables('connectSha256'), variables('connectVersion'), subscription().subscriptionId, resourceGroup().name, variables('appName'))]"
     },
     "siteUrl": {
       "type": "string",
