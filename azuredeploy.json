@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.38.33.27573",
-      "templateHash": "18228257624986048371"
+      "templateHash": "2811922642773332062"
     }
   },
   "parameters": {
@@ -96,9 +96,9 @@
     ],
     "$fxv#0": "higateargus.azurecr.io",
     "$fxv#1": "higateargus.azurecr.io/argus@sha256:49e4a5270a0a9a82a86f033876e63921a5bd744fe4b28044ba4b83adb110bc27",
-    "$fxv#2": "0.2.24",
-    "$fxv#3": "https://github.com/Higate-Security/argus-connect/releases/download/v0.2.24/argus-connect-0.2.24.zip",
-    "$fxv#4": "d4e42809552f9363dcd03e0691a27c6d0bf4f67bb9aa6623d35a68c9785dba3d",
+    "$fxv#2": "0.2.25",
+    "$fxv#3": "https://github.com/Higate-Security/argus-connect/releases/download/v0.2.25/argus-connect-0.2.25.zip",
+    "$fxv#4": "f98034619ba46b13664a7ce07a62e73de394e0b8b899829c39e6041e13c26f9a",
     "releaseRegistry": "[variables('$fxv#0')]",
     "suffix": "[uniqueString(resourceGroup().id)]",
     "tags": {
