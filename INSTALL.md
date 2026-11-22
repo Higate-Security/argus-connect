@@ -1,6 +1,6 @@
 # Install Argus in your own Azure
 
-Argus 0.2.26. This guide takes you from an empty Azure subscription to Argus's sign-in page.
+Argus 0.2.27. This guide takes you from an empty Azure subscription to Argus's sign-in page.
 
 ## 1. What it builds, and what it costs
 
@@ -42,18 +42,38 @@ $rg = 'argus'
 $region = 'eastus'
 $addresses = @('203.0.113.10')
 $user = 'THE_USER_NAME_HIGATE_SENT'
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.26/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.27/azuredeploy.json'
+$registry = 'higateargus.azurecr.io'
+$params = $null
 if (Set-AzContext -Subscription $subscription -ErrorAction SilentlyContinue) {
-  if (-not (Get-AzResourceGroup -Name $rg -ErrorAction SilentlyContinue)) { New-AzResourceGroup -Name $rg -Location $region }
   $params = @{ allowedAddresses = $addresses; registryUsername = $user; registryPassword = (Read-Host 'Pull credential password' -MaskInput) }
-  New-AzResourceGroupDeployment -WhatIf -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
+  $basic = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("$($user):$($params.registryPassword)"))
+  $check = ''
+  try { $answer = Invoke-RestMethod -Uri "https://$registry/oauth2/token?service=$registry&scope=repository:argus:pull" -Headers @{ Authorization = "Basic $basic" } }
+  catch { $check = if ([int]$_.Exception.Response.StatusCode -eq 401) { 'refused' } else { "it couldn't be reached: $($_.Exception.Message)" } }
+  if (-not $check) {
+    try {
+      $part = "$(if ($answer.access_token) { $answer.access_token } else { $answer.token })".Split('.')[1].Replace('-', '+').Replace('_', '/')
+      $claims = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($part + ('=' * ((4 - $part.Length % 4) % 4)))) | ConvertFrom-Json
+      if (-not @($claims.access | Where-Object { $_.type -eq 'repository' -and $_.name -eq 'argus' -and @($_.actions) -contains 'pull' })) { $check = 'no pull' }
+    } catch { $check = "its answer couldn't be read" }
+  }
+  $basic = $null; $answer = $null
+  if ($check -eq 'refused') { $params = $null; Write-Host "Stopped: the registry refused that user name and password. Check both against what Higate sent, then paste this block again. Nothing was changed." -ForegroundColor Red }
+  elseif ($check -eq 'no pull') { $params = $null; Write-Host "Stopped: the registry accepted that user name and password, but they can't pull Argus's image. Ask Higate to check the pull credential. Nothing was changed." -ForegroundColor Red }
+  elseif ($check) { Write-Host "Couldn't check the password with $registry ($check). Carrying on; check it against what Higate sent." -ForegroundColor Yellow }
+  if ($params) {
+    if (-not (Get-AzResourceGroup -Name $rg -ErrorAction SilentlyContinue)) { New-AzResourceGroup -Name $rg -Location $region }
+    New-AzResourceGroupDeployment -WhatIf -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
+  }
 } else { Write-Host "Stopped: your account can't use the subscription '$subscription' (step 2). Nothing was made." -ForegroundColor Red }
 ```
 
 If it stops because it can't use the subscription, your account has no role on it (step 2). If your resource group
 already exists, the block uses it as it is, and `$region` isn't used. It asks for the password;
-paste it (it shows as stars). On an empty group it lists 11 resources to create. An empty resource group costs
-nothing.
+paste it (it shows as stars). It checks the user name and password with Higate's registry before anything else: if the
+registry refuses them, or they can't pull Argus's image, it stops there and changes nothing, because a deploy with a
+wrong password would take Argus offline. On an empty group it lists 11 resources to create. An empty resource group costs nothing.
 
 ## 4. Deploy
 
@@ -61,16 +81,20 @@ In the same Cloud Shell, the same command with a name in place of `-WhatIf`. It 
 shell, so to deploy again, or in a new Cloud Shell, paste step 3's block first:
 
 ```powershell
-New-AzResourceGroupDeployment -Name argus -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
-$params.Remove('registryPassword')
+if ($params) {
+  New-AzResourceGroupDeployment -Name argus -ResourceGroupName $rg -TemplateUri $template -TemplateParameterObject $params
+  $params.Remove('registryPassword'); $params = $null
+} else { Write-Host "Stopped: step 3 didn't pass in this Cloud Shell, so nothing was deployed. Paste step 3's block first." -ForegroundColor Red }
 ```
 
 Or use the portal:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.26%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.27%2Fazuredeploy.json)
 
 Choose the resource group, then fill in **Allowed Addresses** as a list, like `["203.0.113.10"]`, **Registry Username**
-and **Registry Password**. Leave the rest as it is.
+and **Registry Password**. Leave the rest as it is. The portal doesn't check the password with the registry: a wrong
+one still reports **Succeeded**, but Argus can't start until you deploy again with the right one. Step 3's block checks
+it first.
 
 Deploying again with the same values changes nothing. Give the password every time you
 deploy.
@@ -128,16 +152,17 @@ the vault into it first. Set the first two lines to the group's name and region:
 $rg = 'argus'
 $region = 'eastus'
 New-AzResourceGroup -Name $rg -Location $region
-$vault = Get-AzKeyVault -InRemovedState | Where-Object { "$($_.Id) $($_.ResourceId)" -like "*/resourceGroups/$rg/*" }
+$vault = Get-AzKeyVault -InRemovedState | Where-Object { "$($_.Id) $($_.ResourceId)" -like "*/resourceGroups/$rg/*" } |
+    Sort-Object DeletionDate -Descending | Select-Object -First 1
 Undo-AzKeyVaultRemoval -VaultName $vault.VaultName -ResourceGroupName $rg -Location $vault.Location
 ```
 
 ## Checking the template
 
-The template for this release is `azuredeploy.json`, SHA-256 `4bc619726ed70863b40f8718ec081172ccdd925948f6b99c71047a90eb9666b5`. In Cloud Shell:
+The template for this release is `azuredeploy.json`, SHA-256 `7a18bc885be501cecf958ef22c814a7c4a6308216d45f45a9a54e663947fef31`. In Cloud Shell:
 
 ```powershell
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.26/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.27/azuredeploy.json'
 Invoke-WebRequest -Uri $template -OutFile ./azuredeploy.json
 (Get-FileHash ./azuredeploy.json -Algorithm SHA256).Hash
 ```
