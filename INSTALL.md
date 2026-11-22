@@ -1,6 +1,6 @@
 # Install Argus in your own Azure
 
-Argus 0.2.27. This guide takes you from an empty Azure subscription to Argus's sign-in page.
+Argus 0.2.28. This guide takes you from an empty Azure subscription to Argus's sign-in page.
 
 ## 1. What it builds, and what it costs
 
@@ -42,7 +42,7 @@ $rg = 'argus'
 $region = 'eastus'
 $addresses = @('203.0.113.10')
 $user = 'THE_USER_NAME_HIGATE_SENT'
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.27/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.28/azuredeploy.json'
 $registry = 'higateargus.azurecr.io'
 $params = $null
 if (Set-AzContext -Subscription $subscription -ErrorAction SilentlyContinue) {
@@ -89,7 +89,7 @@ if ($params) {
 
 Or use the portal:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.27%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.28%2Fazuredeploy.json)
 
 Choose the resource group, then fill in **Allowed Addresses** as a list, like `["203.0.113.10"]`, **Registry Username**
 and **Registry Password**. Leave the rest as it is. The portal doesn't check the password with the registry: a wrong
@@ -159,10 +159,10 @@ Undo-AzKeyVaultRemoval -VaultName $vault.VaultName -ResourceGroupName $rg -Locat
 
 ## Checking the template
 
-The template for this release is `azuredeploy.json`, SHA-256 `7a18bc885be501cecf958ef22c814a7c4a6308216d45f45a9a54e663947fef31`. In Cloud Shell:
+The template for this release is `azuredeploy.json`, SHA-256 `91e0ac660f1e79d7c0cafdec4e8bd155bb85e66448f55daf372f92aeca0eb7d2`. In Cloud Shell:
 
 ```powershell
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.27/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.28/azuredeploy.json'
 Invoke-WebRequest -Uri $template -OutFile ./azuredeploy.json
 (Get-FileHash ./azuredeploy.json -Algorithm SHA256).Hash
 ```
