@@ -1,6 +1,6 @@
 # Install Argus in your own Azure
 
-Argus 0.2.28. This guide takes you from an empty Azure subscription to Argus's sign-in page.
+Argus 0.2.33. This guide takes you from an empty Azure subscription to Argus's sign-in page.
 
 ## 1. What it builds, and what it costs
 
@@ -18,7 +18,7 @@ network cost little or nothing. Prices depend on your region and agreement, so c
 [pricing calculator](https://azure.microsoft.com/pricing/calculator/), with
 [Container Apps](https://azure.microsoft.com/pricing/details/container-apps/),
 [Azure Files](https://azure.microsoft.com/pricing/details/storage/files/) (Premium, NFS) and
-[Key Vault](https://azure.microsoft.com/pricing/details/key-vault/). Argus's licence is separate.
+[Key Vault](https://azure.microsoft.com/pricing/details/key-vault/). Argus's license is separate.
 
 ## 2. Before you start
 
@@ -42,7 +42,7 @@ $rg = 'argus'
 $region = 'eastus'
 $addresses = @('203.0.113.10')
 $user = 'THE_USER_NAME_HIGATE_SENT'
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.28/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.33/azuredeploy.json'
 $registry = 'higateargus.azurecr.io'
 $params = $null
 if (Set-AzContext -Subscription $subscription -ErrorAction SilentlyContinue) {
@@ -89,7 +89,7 @@ if ($params) {
 
 Or use the portal:
 
-[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.28%2Fazuredeploy.json)
+[![Deploy to Azure](https://aka.ms/deploytoazurebutton)](https://portal.azure.com/#create/Microsoft.Template/uri/https%3A%2F%2Fraw.githubusercontent.com%2FHigate-Security%2Fargus-connect%2Fv0.2.33%2Fazuredeploy.json)
 
 Choose the resource group, then fill in **Allowed Addresses** as a list, like `["203.0.113.10"]`, **Registry Username**
 and **Registry Password**. Leave the rest as it is. The portal doesn't check the password with the registry: a wrong
@@ -128,12 +128,12 @@ In the same Cloud Shell (with `$subscription` and `$rg` set as in step 5):
 (Get-AzResourceGroupDeployment -ResourceGroupName $rg | Where-Object { $_.Outputs -and $_.Outputs.ContainsKey('siteUrl') } | Sort-Object Timestamp -Descending | Select-Object -First 1).Outputs['siteUrl'].Value
 ```
 
-Open that address from one of your allowed addresses and sign in. Then add the 90-day beta licence file Higate sent
+Open that address from one of your allowed addresses and sign in. Then add the 90-day beta license file Higate sent
 you.
 
 ## Moving from an Argus server
 
-If this organisation already runs Argus on a Windows server, Connect leaves the server's sign-in app as it is and makes
+If this organization already runs Argus on a Windows server, Connect leaves the server's sign-in app as it is and makes
 this Argus its own, named with its address (Argus sign-in (your address)). The server keeps working while you move, and
 Connect's plan names both apps before it changes anything. The server's **Argus Admins** and **Argus Viewers** groups are
 already there, so Connect stops at them and shows their object IDs. To give this Argus the same people, paste Connect's
@@ -159,10 +159,10 @@ Undo-AzKeyVaultRemoval -VaultName $vault.VaultName -ResourceGroupName $rg -Locat
 
 ## Checking the template
 
-The template for this release is `azuredeploy.json`, SHA-256 `91e0ac660f1e79d7c0cafdec4e8bd155bb85e66448f55daf372f92aeca0eb7d2`. In Cloud Shell:
+The template for this release is `azuredeploy.json`, SHA-256 `1c1e22c1342d4b7e82ac003e40a7f16c4d5e04f4a85db76119b232874507350d`. In Cloud Shell:
 
 ```powershell
-$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.28/azuredeploy.json'
+$template = 'https://raw.githubusercontent.com/Higate-Security/argus-connect/v0.2.33/azuredeploy.json'
 Invoke-WebRequest -Uri $template -OutFile ./azuredeploy.json
 (Get-FileHash ./azuredeploy.json -Algorithm SHA256).Hash
 ```
